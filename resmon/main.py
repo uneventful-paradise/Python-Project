@@ -1,6 +1,8 @@
 import time
 import psutil
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
+NavigationToolbar2Tk)
 import matplotlib.dates as mdates
 import numpy as np
 import collections
@@ -20,8 +22,15 @@ from tkinter import ttk
 #TODO: network montoring
 #TODO: split graphs in subgraphs
 
-class ResGraph():
-    def __init__(self):
+LARGE_FONT = ("Verdana", 12)
+
+class GraphFrame(tk.Frame):
+    def __init__(self, parent):
+        tk.Frame.__init__(self, parent)
+        label = tk.Label(self, text="Example of Live Plotting", font=LARGE_FONT)
+        label.pack(pady=10, padx=10, side='top')
+
+
         self.cpu_usage_data = collections.deque(maxlen=5)
         self.cpu_freq_data = collections.deque(maxlen=5)
         self.mem_usage_data = collections.deque(maxlen=5)
@@ -58,6 +67,18 @@ class ResGraph():
         self.cpu_usage_ax.legend(loc='upper left')
         self.cpu_freq_ax.legend(loc='upper right')
 
+        self.canvas = FigureCanvasTkAgg(self.fig, self)
+        #creating matplotlib toolbar
+        toolbar = NavigationToolbar2Tk(self.canvas, self)
+        toolbar.update()
+
+        # button1 = ttk.Button(self, text="Back",
+        #                      command=lambda: controller.show_frame(StartPage))
+        # button1.pack(side='bottom')
+        #place the canvas on the tkinter window
+        self.canvas.get_tk_widget().pack(side='top', fill=tk.BOTH, expand=True)
+        self.update_data()
+
     def update_data(self):
         self.cpu_usage_data.append(psutil.cpu_percent())
         self.cpu_freq_data.append(psutil.cpu_freq().current)
@@ -66,27 +87,48 @@ class ResGraph():
         self.time_data.append(datetime.datetime.now())
 
     def animate(self):
-        while True:
-            self.update_data()
-            print(f'time: {self.time_data}; cpu_usage: {self.cpu_usage_data}')
-            self.cpu_usage_plot.set_xdata(self.time_data)
-            self.cpu_usage_plot.set_ydata(self.cpu_usage_data)
+        # while True:
+        self.update_data()
+        print(f'time: {self.time_data}; cpu_usage: {self.cpu_usage_data}')
+        self.cpu_usage_plot.set_xdata(self.time_data)
+        self.cpu_usage_plot.set_ydata(self.cpu_usage_data)
 
-            self.mem_usage_plot.set_xdata(self.time_data)
-            self.mem_usage_plot.set_ydata(self.mem_usage_data)
+        self.mem_usage_plot.set_xdata(self.time_data)
+        self.mem_usage_plot.set_ydata(self.mem_usage_data)
 
-            self.cpu_freq_plot.set_xdata(self.time_data)
-            self.cpu_freq_plot.set_ydata(self.cpu_freq_data)
+        self.cpu_freq_plot.set_xdata(self.time_data)
+        self.cpu_freq_plot.set_ydata(self.cpu_freq_data)
 
-            self.cpu_freq_ax.set_xlim(self.time_data[0], self.time_data[-1])
-            self.cpu_usage_ax.set_xlim(self.time_data[0], self.time_data[-1])
-            self.mem_usage_ax.set_xlim(self.time_data[0], self.time_data[-1])
-            self.network_usage_ax.set_xlim(self.time_data[0], self.time_data[-1])
+        self.cpu_freq_ax.set_xlim(self.time_data[0], self.time_data[-1])
+        self.cpu_usage_ax.set_xlim(self.time_data[0], self.time_data[-1])
+        self.mem_usage_ax.set_xlim(self.time_data[0], self.time_data[-1])
+        self.network_usage_ax.set_xlim(self.time_data[0], self.time_data[-1])
 
-            self.fig.canvas.draw()
-            self.fig.canvas.flush_events()
-            time.sleep(0.5)
-            # self.after(1000, self.animate)
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+        self.canvas.draw_idle()  # redraw plot
+        # self.after(10000, self.update_data)  # repeat after 1s
+        # time.sleep(0.5)
+        #sau cu animate
+        self.after(1000, self.animate)
+
+
+
+class MainApp(tk.Frame):
+    def __init__(self, parent, *args, **kwargs):
+        tk.Frame.__init__(self, parent, *args, **kwargs)
+        self.parent = parent
+        self.grid(row=0, column=0, sticky='ew')
+        self.pack_propagate(False)  # Prevent the frame from resizing to fit its contents
+
+        # Button that displays the plot
+        self.plot_button = tk.Button(master=self,
+                                height=2,
+                                width=10,
+                                text="Plot")
+        self.plot_button.pack(side='bottom', pady=10)
+
 
 # plt.ion()
 # graph = ResGraph()
@@ -97,18 +139,10 @@ root = tk.Tk()
 root.title('ResMon')
 root.geometry('{}x{}'.format(1200, 600))
 root.resizable(False, False)
+root.pack_propagate(False)
 
-cpu_usage_frame = tk.Frame(master=root, bg='grey', height=300)
-cpu_usage_frame.grid(row=0, column=0, sticky='ew')
-cpu_usage_frame.pack_propagate(False)  # Prevent the frame from resizing to fit its contents
-
-root.grid_columnconfigure(0, weight=1)
-
-# Button that displays the plot
-plot_button = tk.Button(master=cpu_usage_frame,
-                        height=2,
-                        width=10,
-                        text="Plot")
-plot_button.pack(side='bottom', pady=10)
-
+# MainApp(root, bg='grey', height=300).pack(side='top', fill='both', expand=False)
+graph_frame = GraphFrame(root)
+graph_frame.pack(fill=tk.BOTH, expand=True)
+graph_frame.animate()
 root.mainloop()

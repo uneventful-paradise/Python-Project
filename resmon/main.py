@@ -139,13 +139,13 @@ class MainApp(tk.Frame):
 
 class ScrollableFrame(tk.Frame):
     def __init__(self, parent):
-        tk.Frame.__init__(self, parent, bg = 'pink')
+        tk.Frame.__init__(self, parent)
         # self.graphs = graphs
 
         # Canvas for scrolling
-        canvas = tk.Canvas(self)
+        canvas = tk.Canvas(self, bg = 'light green')
         scrollbar = tk.Scrollbar(self, orient="vertical", command=canvas.yview)
-        self.scrollable_frame = tk.Frame(canvas)
+        self.scrollable_frame = tk.Frame(canvas, bg='pink')
 
         # Update scroll region when resizing
         self.scrollable_frame.bind(
@@ -156,12 +156,16 @@ class ScrollableFrame(tk.Frame):
         )
 
         # Create window inside canvas
-        canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-
+        window_id=canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfig(window_id, width=e.width)
+        )
         canvas.configure(yscrollcommand=scrollbar.set)
 
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+
 
 
 
@@ -178,11 +182,11 @@ update_data()
 update_data()
 
 cpu_graph = GraphFrame(scrollable_frame.scrollable_frame, "blue", "CPU USAGE", "CPU USAGE", 100, "CPU USAGE (%)", "cpu_usage")
-cpu_graph.grid(row=0, column=0, pady=20, sticky='news')
+cpu_graph.pack(side="top", fill="both", expand=True)
 cpu_graph.animate()
 
 mem_graph = GraphFrame(scrollable_frame.scrollable_frame, "orange", "MEMORY USAGE", "MEMORY USAGE", 100, "MEMORY USAGE (%)", "mem_usage")
-mem_graph.grid(row=1, column=0, pady=20, sticky='ew')
+mem_graph.pack(side="top", fill="both", expand=True)
 mem_graph.animate()
 
 

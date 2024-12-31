@@ -21,9 +21,11 @@ import json
 #https://www.geeksforgeeks.org/how-to-update-a-plot-on-same-figure-during-the-loop/
 #https://www.geeksforgeeks.org/how-to-embed-matplotlib-charts-in-tkinter-gui/
 
-#TODO: fix initial plotting
-#TODO: fix figure size and color
+#TODO: try button in graph frame and in separate frame
 #TODO: graph manager
+#TODO: add disk usage and sent/received network data
+
+#plt.style.use('seaborn-v0_8-whitegrid')
 plt.style.use('dark_background')
 LARGE_FONT = ("Verdana", 12)
 data = {}
@@ -31,7 +33,8 @@ for name in ("cpu_usage", "cpu_freq", "mem_usage", "disk_usage", "network_data",
              "cpu_usage_time", "cpu_freq_time", "mem_usage_time", "disk_usage_time", "network_data_time"):
     data[name] = collections.deque(maxlen=5)
 data["old_network_value"] = 0
-
+jpeg_cnt = 0
+pdf_cnt = 0
 
 def get_network_usage():
     new_value = psutil.net_io_counters(nowrap=True).bytes_sent + psutil.net_io_counters(nowrap=True).bytes_recv
@@ -92,9 +95,7 @@ class GraphFrame(tk.Frame):
         toolbar = NavigationToolbar2Tk(self.canvas, self)
         toolbar.update()
 
-        # button1 = ttk.Button(self, text="Back",
-        #                      command=lambda: controller.show_frame(StartPage))
-        # button1.pack(side='bottom')
+
         #place the canvas on the tkinter window
         self.canvas.get_tk_widget().pack(side='top', fill=tk.BOTH, expand=True)
 
@@ -166,9 +167,32 @@ class ScrollableFrame(tk.Frame):
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+class ButtonFrame():
+    def __init__(self, parent_frame, graph, pdf_cnt, jpeg_cnt):
+        base_frame = tk.Frame(parent_frame, height=50)
+        base_frame.pack(side='top', fill='x')
+        left_frame = tk.Frame(base_frame, bg='red')
+        right_frame = tk.Frame(base_frame, bg='red')
 
+        self.graph = graph
+        self.pdf_cnt = pdf_cnt
+        self.jpeg_cnt = jpeg_cnt
 
+        left_frame.pack(side='left', fill='both', expand=True)
+        right_frame.pack(side='right', fill='both', expand=True)
+        png_save_button = ttk.Button(left_frame, text="Save as JPEG", command=self.save_current_plot_as_jpeg)
+        png_save_button.pack(side='right', padx=10, pady=10)
+        pdf_save_button = ttk.Button(right_frame, text="Save as PDF", command=self.save_current_plot_as_pdf)
+        pdf_save_button.pack(side='left', padx=10, pady=10)
+    def save_current_plot_as_pdf(self):
+        self.graph.fig.savefig(f'{self.graph.fig.gca().get_title()}{pdf_cnt}.pdf', format = 'pdf')
+        self.pdf_cnt = self.pdf_cnt + 1
+        print("saved figure as pdf")
 
+    def save_current_plot_as_jpeg(self):
+        self.graph.fig.savefig(f'{self.graph.fig.gca().get_title()}{jpeg_cnt}.jpeg', format = 'jpeg')
+        self.jpeg_cnt = self.jpeg_cnt + 1
+        print("saved figure as jpeg")
 
 root = tk.Tk()
 root.title('ResMon')
@@ -183,13 +207,24 @@ update_data()
 
 cpu_graph = GraphFrame(scrollable_frame.scrollable_frame, "blue", "CPU USAGE", "CPU USAGE", 100, "CPU USAGE (%)", "cpu_usage")
 cpu_graph.pack(side="top", fill="both", expand=True)
+cpu_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, cpu_graph, pdf_cnt, jpeg_cnt)
+# cpu_button_frame.pack(side="top", fill="x", padx=10, pady=10)
 cpu_graph.animate()
 
 mem_graph = GraphFrame(scrollable_frame.scrollable_frame, "orange", "MEMORY USAGE", "MEMORY USAGE", 100, "MEMORY USAGE (%)", "mem_usage")
 mem_graph.pack(side="top", fill="both", expand=True)
+mem_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, mem_graph, pdf_cnt, jpeg_cnt)
 mem_graph.animate()
 
+cpu_freq_graph = GraphFrame(scrollable_frame.scrollable_frame, "green", "CPU FREQUENCY", "CPU FREQUENCY", 5000, "CPU FREQUENCY (Mhz)", "cpu_freq")
+cpu_freq_graph.pack(side="top", fill="both", expand=True)
+cpu_freq_button = ButtonFrame(scrollable_frame.scrollable_frame, cpu_freq_graph, pdf_cnt, jpeg_cnt)
+cpu_freq_graph.animate()
 
+network_data_graph = GraphFrame(scrollable_frame.scrollable_frame, "pink", "NETWORK DATA", "NETWORK DATA", 1000, "NETWORK DATA (Mbs/s)", "network_data")
+network_data_graph.pack(side="top", fill="both", expand=True)
+network_data_button = ButtonFrame(scrollable_frame.scrollable_frame, network_data_graph, pdf_cnt, jpeg_cnt)
+network_data_graph.animate()
 # graph_frame.pack(fill=tk.BOTH, expand=True)
 # graph_frame.animate()
 root.mainloop()

@@ -168,15 +168,13 @@ class ScrollableFrame(tk.Frame):
         scrollbar.pack(side="right", fill="y")
 
 class ButtonFrame():
-    def __init__(self, parent_frame, graph, pdf_cnt, jpeg_cnt):
+    def __init__(self, parent_frame, graph):
         base_frame = tk.Frame(parent_frame, height=50)
         base_frame.pack(side='top', fill='x')
         left_frame = tk.Frame(base_frame, bg='red')
         right_frame = tk.Frame(base_frame, bg='red')
 
         self.graph = graph
-        self.pdf_cnt = pdf_cnt
-        self.jpeg_cnt = jpeg_cnt
 
         left_frame.pack(side='left', fill='both', expand=True)
         right_frame.pack(side='right', fill='both', expand=True)
@@ -185,14 +183,19 @@ class ButtonFrame():
         pdf_save_button = ttk.Button(right_frame, text="Save as PDF", command=self.save_current_plot_as_pdf)
         pdf_save_button.pack(side='left', padx=10, pady=10)
     def save_current_plot_as_pdf(self):
-        self.graph.fig.savefig(f'{self.graph.fig.gca().get_title()}{pdf_cnt}.pdf', format = 'pdf')
-        self.pdf_cnt = self.pdf_cnt + 1
-        print("saved figure as pdf")
+        global pdf_cnt
+        self.graph.fig.savefig(f'{self.graph.title}_{pdf_cnt}.pdf', format = 'pdf')
+        print(f"saved figure {pdf_cnt} as pdf")
+        plt.close(self.graph.fig)
+        pdf_cnt += 1
 
     def save_current_plot_as_jpeg(self):
-        self.graph.fig.savefig(f'{self.graph.fig.gca().get_title()}{jpeg_cnt}.jpeg', format = 'jpeg')
-        self.jpeg_cnt = self.jpeg_cnt + 1
-        print("saved figure as jpeg")
+        global jpeg_cnt
+        self.graph.fig.savefig(f'{self.graph.title}_{jpeg_cnt}.jpeg', format = 'jpeg')
+        print(f"saved figure {jpeg_cnt} as jpeg")
+        plt.close(self.graph.fig)
+        jpeg_cnt += 1
+
 
 root = tk.Tk()
 root.title('ResMon')
@@ -207,23 +210,23 @@ update_data()
 
 cpu_graph = GraphFrame(scrollable_frame.scrollable_frame, "blue", "CPU USAGE", "CPU USAGE", 100, "CPU USAGE (%)", "cpu_usage")
 cpu_graph.pack(side="top", fill="both", expand=True)
-cpu_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, cpu_graph, pdf_cnt, jpeg_cnt)
+cpu_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, cpu_graph)
 # cpu_button_frame.pack(side="top", fill="x", padx=10, pady=10)
 cpu_graph.animate()
 
 mem_graph = GraphFrame(scrollable_frame.scrollable_frame, "orange", "MEMORY USAGE", "MEMORY USAGE", 100, "MEMORY USAGE (%)", "mem_usage")
 mem_graph.pack(side="top", fill="both", expand=True)
-mem_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, mem_graph, pdf_cnt, jpeg_cnt)
+mem_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, mem_graph)
 mem_graph.animate()
 
 cpu_freq_graph = GraphFrame(scrollable_frame.scrollable_frame, "green", "CPU FREQUENCY", "CPU FREQUENCY", 5000, "CPU FREQUENCY (Mhz)", "cpu_freq")
 cpu_freq_graph.pack(side="top", fill="both", expand=True)
-cpu_freq_button = ButtonFrame(scrollable_frame.scrollable_frame, cpu_freq_graph, pdf_cnt, jpeg_cnt)
+cpu_freq_button = ButtonFrame(scrollable_frame.scrollable_frame, cpu_freq_graph)
 cpu_freq_graph.animate()
 
 network_data_graph = GraphFrame(scrollable_frame.scrollable_frame, "pink", "NETWORK DATA", "NETWORK DATA", 1000, "NETWORK DATA (Mbs/s)", "network_data")
 network_data_graph.pack(side="top", fill="both", expand=True)
-network_data_button = ButtonFrame(scrollable_frame.scrollable_frame, network_data_graph, pdf_cnt, jpeg_cnt)
+network_data_button = ButtonFrame(scrollable_frame.scrollable_frame, network_data_graph)
 network_data_graph.animate()
 # graph_frame.pack(fill=tk.BOTH, expand=True)
 # graph_frame.animate()

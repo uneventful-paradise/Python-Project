@@ -1,15 +1,14 @@
-import json
 import time
 import psutil
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg,
 NavigationToolbar2Tk)
 import matplotlib.dates as mdates
-import numpy as np
 import collections
 import datetime
 import tkinter as tk
 from tkinter import ttk
+import tkcalendar
 import json
 
 # Create two subplots and unpack the output array immediately
@@ -21,7 +20,6 @@ import json
 #https://www.geeksforgeeks.org/how-to-update-a-plot-on-same-figure-during-the-loop/
 #https://www.geeksforgeeks.org/how-to-embed-matplotlib-charts-in-tkinter-gui/
 
-#TODO: try button in graph frame and in separate frame
 #TODO: graph manager
 #TODO: add disk usage and sent/received network data
 
@@ -37,9 +35,11 @@ jpeg_cnt = 0
 pdf_cnt = 0
 
 def get_network_usage():
-    new_value = psutil.net_io_counters(nowrap=True).bytes_sent + psutil.net_io_counters(nowrap=True).bytes_recv
+    tx = psutil.net_io_counters(nowrap=True).bytes_sent
+    rx = psutil.net_io_counters(nowrap=True).bytes_recv
+    new_value = rx + tx
     net_usage = (new_value - data["old_network_value"]) / 1024.0 * 8
-    return net_usage, new_value
+    return net_usage, new_value, tx, rx
 
 def update_data(data_type = "all"):
     # if (len(data["time"]) > 0 and datetime.datetime.now() > data["time"][-1] + datetime.timedelta(0, 1)) or data_type == "all":
@@ -54,11 +54,53 @@ def update_data(data_type = "all"):
         data["mem_usage"].append(psutil.virtual_memory().percent)
         data["mem_usage_time"].append(datetime.datetime.now())
     if data_type == "network_data" or data_type == "all":
-        (current_net_usage, new_network_usage) = get_network_usage()
+        (current_net_usage, new_network_usage, tx, rx) = get_network_usage()
         data["network_data"].append(current_net_usage)
+        data["network_in"].append(rx)
+        data["network_out"].append(tx)
         data["network_data_time"].append(datetime.datetime.now())
         data["old_network_value"] = new_network_usage
     #adding a time array for each graph to avoid sync issues
+def write_data(filename, write_data):
+    try:
+        with open(filename, "a") as f:
+            json.dump(write_data, f)
+            f.write("\n")
+            f.flush()
+    except OSError:
+            print ("Could not open/write file:", filename)
+
+def log_data(filename):
+    current_data = dict()
+    for key in data:
+        try:
+            if key.endswith("_time"):
+                current_data[key] = data[key][-1].strftime("%Y-%m-%d %H:%M:%S")
+            elif key == "old_network_value":
+                current_data[key] = data[key]
+            else:
+                current_data[key] = data[key][-1]
+        except IndexError:
+            current_data[key] = 0
+    write_data(filename, current_data)
+
+def read_data(filename, time_offset):
+    try:
+        with open(filename, "r") as f:
+            offset = datetime.timedelta(seconds=time_offset)
+            content = f.readlines()
+            for line in content:
+                try:
+                    entry = json.loads(line)
+                    entry_date = datetime.datetime.strptime(entry["cpu_usage_time"], "%Y-%m-%d %H:%M:%S")
+                    if entry_date + offset >= datetime.datetime.now():
+                        print(json.dumps(entry, indent=4))  # Pretty print filtered entry
+
+                except (json.JSONDecodeError, KeyError):
+                    print("Skipping invalid or incomplete entry.")
+    except FileNotFoundError:
+        print("Log file not found.")
+
 
 class GraphFrame(tk.Frame):
     def __init__(self, parent, color, title, label, ylim, ylabel, data_type):
@@ -85,6 +127,9 @@ class GraphFrame(tk.Frame):
         self.plot = self.ax.plot(data[self.time_index], data[self.data_type], color = self.color, label=self.label, linestyle = 'solid', linewidth = 3)[0]
         self.ax.set_ylim(0, ylim)
 
+        if self.data_type == "network_data":
+            self.ax.plot(data[self.time_index], data["network_in"], color = self.color, alpha = 0.5, linestyle = 'dotted', linewidth = 3)
+            self.ax.plot(data[self.time_index], data["network_out"], color = self.color, alpha = 0.5, linestyle = 'dashed', linewidth = 3)
 
         self.ax.set_xlabel('Time')
         self.ax.set_ylabel(self.ylabel)
@@ -101,10 +146,7 @@ class GraphFrame(tk.Frame):
 
 
     def animate(self):
-        # while True:
-        update_data(self.data_type)
-
-        # print(f'time: {self.time_data}; cpu_usage: {self.cpu_usage_data}')
+        # update_data(self.data_type)
 
         self.plot.set_xdata(data[self.time_index])
         self.plot.set_ydata(data[self.data_type])
@@ -118,10 +160,22 @@ class GraphFrame(tk.Frame):
         self.fig.canvas.flush_events()
 
         self.canvas.draw_idle()  # redraw plot
-        # self.after(10000, self.update_data)  # repeat after 1s
         # time.sleep(0.5)
         #sau cu animate
-        self.after(1000, self.animate)
+        # self.after(1000, self.animate)
+
+class GraphManager:
+    def __init__(self, graphs, log_file):
+        self.graphs = graphs
+        self.log_file = log_file
+        self.update_all_data()
+
+    def update_all_data(self):
+        update_data("all")  # Update all data at once
+        for graph in self.graphs:
+            graph.animate()
+        log_data(self.log_file)
+        root.after(1000, self.update_all_data)
 
 
 class MainApp(tk.Frame):
@@ -182,6 +236,23 @@ class ButtonFrame():
         png_save_button.pack(side='right', padx=10, pady=10)
         pdf_save_button = ttk.Button(right_frame, text="Save as PDF", command=self.save_current_plot_as_pdf)
         pdf_save_button.pack(side='left', padx=10, pady=10)
+        #https://stackoverflow.com/questions/66510020/select-date-range-with-tkinter
+
+        time_spinvar = tk.IntVar()
+        #sau entry
+        time_spinbox = ttk.Spinbox(right_frame, from_=0, to=100, textvariable=time_spinvar, width=3)
+        time_spinbox.pack(side='left', padx=10, pady=10)
+        # time_label = ttk.Label(right_frame, textvariable=time_spinvar)
+
+        # time_label.pack(side='left', padx=10, pady=10)
+
+        def do_something(event):
+            #entry -> entry.get()
+            offset = time_spinvar.get()
+            print("do something:", offset)
+            read_data("log_file.txt", offset)
+
+        time_spinbox.bind("<Return>", do_something)
     def save_current_plot_as_pdf(self):
         global pdf_cnt
         self.graph.fig.savefig(f'{self.graph.title}_{pdf_cnt}.pdf', format = 'pdf')
@@ -211,23 +282,20 @@ update_data()
 cpu_graph = GraphFrame(scrollable_frame.scrollable_frame, "blue", "CPU USAGE", "CPU USAGE", 100, "CPU USAGE (%)", "cpu_usage")
 cpu_graph.pack(side="top", fill="both", expand=True)
 cpu_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, cpu_graph)
-# cpu_button_frame.pack(side="top", fill="x", padx=10, pady=10)
-cpu_graph.animate()
 
 mem_graph = GraphFrame(scrollable_frame.scrollable_frame, "orange", "MEMORY USAGE", "MEMORY USAGE", 100, "MEMORY USAGE (%)", "mem_usage")
 mem_graph.pack(side="top", fill="both", expand=True)
 mem_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, mem_graph)
-mem_graph.animate()
 
 cpu_freq_graph = GraphFrame(scrollable_frame.scrollable_frame, "green", "CPU FREQUENCY", "CPU FREQUENCY", 5000, "CPU FREQUENCY (Mhz)", "cpu_freq")
 cpu_freq_graph.pack(side="top", fill="both", expand=True)
 cpu_freq_button = ButtonFrame(scrollable_frame.scrollable_frame, cpu_freq_graph)
-cpu_freq_graph.animate()
 
 network_data_graph = GraphFrame(scrollable_frame.scrollable_frame, "pink", "NETWORK DATA", "NETWORK DATA", 1000, "NETWORK DATA (Mbs/s)", "network_data")
 network_data_graph.pack(side="top", fill="both", expand=True)
 network_data_button = ButtonFrame(scrollable_frame.scrollable_frame, network_data_graph)
-network_data_graph.animate()
-# graph_frame.pack(fill=tk.BOTH, expand=True)
-# graph_frame.animate()
+
+manager = GraphManager([cpu_graph, mem_graph, cpu_freq_graph, network_data_graph], "log_file.txt")
+
 root.mainloop()
+# read_data("log_file.txt", 6, datetime.datetime.now())

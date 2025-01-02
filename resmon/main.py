@@ -10,6 +10,7 @@ import tkinter as tk
 from tkinter import ttk
 import tkcalendar
 import json
+import winstats
 
 # Create two subplots and unpack the output array immediately
 # f, (ax1, ax2) = plt.subplots(1, 2, sharey=True)
@@ -32,14 +33,16 @@ for name in ("cpu_usage", "cpu_freq", "mem_usage", "disk_usage", "network_data",
              "cpu_usage_time", "cpu_freq_time", "mem_usage_time", "disk_usage_time", "network_data_time"):
     data[name] = collections.deque(maxlen=5)
 data["old_network_value"] = 0
+data["old_tx"] = 0
+data["old_rx"] = 0
 jpeg_cnt = 0
 pdf_cnt = 0
 
 def get_network_usage():
-    tx = psutil.net_io_counters(nowrap=True).bytes_sent/1024*8
-    rx = psutil.net_io_counters(nowrap=True).bytes_recv/1024*8
+    tx = psutil.net_io_counters(nowrap=True).bytes_sent
+    rx = psutil.net_io_counters(nowrap=True).bytes_recv
     new_value = rx + tx
-    net_usage = (new_value - data["old_network_value"])
+    net_usage = (new_value - data["old_network_value"])/1024*8
     return net_usage, new_value, tx, rx
 
 def update_data(data_type = "all"):
@@ -57,10 +60,12 @@ def update_data(data_type = "all"):
     if data_type == "network_data" or data_type == "all":
         (current_net_usage, new_network_usage, tx, rx) = get_network_usage()
         data["network_data"].append(current_net_usage)
-        data["network_in"].append(rx)
-        data["network_out"].append(tx)
+        data["network_in"].append((rx - data["old_rx"])/1024*8)
+        data["network_out"].append((tx - data["old_tx"])/1024*8)
         data["network_data_time"].append(datetime.datetime.now())
         data["old_network_value"] = new_network_usage
+        data["old_tx"] = tx
+        data["old_rx"] = rx
     #adding a time array for each graph to avoid sync issues
 def write_json_data(filename, write_data):
     try:
@@ -77,7 +82,7 @@ def log_data(filename):
         try:
             if key.endswith("_time"):
                 current_data[key] = data[key][-1].strftime("%Y-%m-%d %H:%M:%S")
-            elif key == "old_network_value":
+            elif key in ("old_network_value", "old_tx", "old_rx") :
                 current_data[key] = data[key]
             else:
                 current_data[key] = data[key][-1]

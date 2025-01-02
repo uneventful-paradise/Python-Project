@@ -20,7 +20,8 @@ import json
 #https://www.geeksforgeeks.org/how-to-update-a-plot-on-same-figure-during-the-loop/
 #https://www.geeksforgeeks.org/how-to-embed-matplotlib-charts-in-tkinter-gui/
 
-#TODO: graph manager
+#TODO: flush problem
+#TODO: network graph
 #TODO: add disk usage and sent/received network data
 
 #plt.style.use('seaborn-v0_8-whitegrid')
@@ -35,10 +36,10 @@ jpeg_cnt = 0
 pdf_cnt = 0
 
 def get_network_usage():
-    tx = psutil.net_io_counters(nowrap=True).bytes_sent
-    rx = psutil.net_io_counters(nowrap=True).bytes_recv
+    tx = psutil.net_io_counters(nowrap=True).bytes_sent/1024*8
+    rx = psutil.net_io_counters(nowrap=True).bytes_recv/1024*8
     new_value = rx + tx
-    net_usage = (new_value - data["old_network_value"]) / 1024.0 * 8
+    net_usage = (new_value - data["old_network_value"])
     return net_usage, new_value, tx, rx
 
 def update_data(data_type = "all"):
@@ -61,7 +62,7 @@ def update_data(data_type = "all"):
         data["network_data_time"].append(datetime.datetime.now())
         data["old_network_value"] = new_network_usage
     #adding a time array for each graph to avoid sync issues
-def write_data(filename, write_data):
+def write_json_data(filename, write_data):
     try:
         with open(filename, "a") as f:
             json.dump(write_data, f)
@@ -82,18 +83,18 @@ def log_data(filename):
                 current_data[key] = data[key][-1]
         except IndexError:
             current_data[key] = 0
-    write_data(filename, current_data)
+    write_json_data(filename, current_data)
 
 def read_data(filename, time_offset):
     try:
         with open(filename, "r") as f:
-            offset = datetime.timedelta(seconds=time_offset)
+            # offset = datetime.timedelta(seconds=time_offset)
             content = f.readlines()
             for line in content:
                 try:
                     entry = json.loads(line)
                     entry_date = datetime.datetime.strptime(entry["cpu_usage_time"], "%Y-%m-%d %H:%M:%S")
-                    if entry_date + offset >= datetime.datetime.now():
+                    if entry_date + time_offset >= datetime.datetime.now():
                         print(json.dumps(entry, indent=4))  # Pretty print filtered entry
 
                 except (json.JSONDecodeError, KeyError):
@@ -128,8 +129,8 @@ class GraphFrame(tk.Frame):
         self.ax.set_ylim(0, ylim)
 
         if self.data_type == "network_data":
-            self.ax.plot(data[self.time_index], data["network_in"], color = self.color, alpha = 0.5, linestyle = 'dotted', linewidth = 3)
-            self.ax.plot(data[self.time_index], data["network_out"], color = self.color, alpha = 0.5, linestyle = 'dashed', linewidth = 3)
+            self.plot_in = self.ax.plot(data[self.time_index], data["network_in"], color = self.color, alpha = 0.5, linestyle = 'dotted', linewidth = 3)[0]
+            self.plot_out = self.ax.plot(data[self.time_index], data["network_out"], color = self.color, alpha = 0.5, linestyle = 'dashed', linewidth = 3)[0]
 
         self.ax.set_xlabel('Time')
         self.ax.set_ylabel(self.ylabel)
@@ -150,7 +151,13 @@ class GraphFrame(tk.Frame):
 
         self.plot.set_xdata(data[self.time_index])
         self.plot.set_ydata(data[self.data_type])
+        if self.data_type == "network_data":
 
+            self.plot_in.set_xdata(data[self.time_index])
+            self.plot_in.set_ydata(data["network_in"])
+
+            self.plot_out.set_xdata(data[self.time_index])
+            self.plot_out.set_ydata(data["network_out"])
 
         self.ax.set_xlim(data[self.time_index][0],data[self.time_index][-1])
         if self.ylim != 100:
@@ -177,20 +184,6 @@ class GraphManager:
         log_data(self.log_file)
         root.after(1000, self.update_all_data)
 
-
-class MainApp(tk.Frame):
-    def __init__(self, parent, *args, **kwargs):
-        tk.Frame.__init__(self, parent, *args, **kwargs)
-        self.parent = parent
-        self.grid(row=0, column=0, sticky='ew')
-        self.pack_propagate(False)  # Prevent the frame from resizing to fit its contents
-
-        # Button that displays the plot
-        self.plot_button = tk.Button(master=self,
-                                height=2,
-                                width=10,
-                                text="Plot")
-        self.plot_button.pack(side='bottom', pady=10)
 
 class ScrollableFrame(tk.Frame):
     def __init__(self, parent):
@@ -223,36 +216,47 @@ class ScrollableFrame(tk.Frame):
 
 class ButtonFrame():
     def __init__(self, parent_frame, graph):
-        base_frame = tk.Frame(parent_frame, height=50)
-        base_frame.pack(side='top', fill='x')
-        left_frame = tk.Frame(base_frame, bg='red')
-        right_frame = tk.Frame(base_frame, bg='red')
+        self.base_frame = tk.Frame(parent_frame, height=50)
+        self.base_frame.pack(side='top', fill='x')
+        self.left_frame = tk.Frame(self.base_frame, bg='red')
+        self.right_frame = tk.Frame(self.base_frame, bg='red')
 
         self.graph = graph
 
-        left_frame.pack(side='left', fill='both', expand=True)
-        right_frame.pack(side='right', fill='both', expand=True)
-        png_save_button = ttk.Button(left_frame, text="Save as JPEG", command=self.save_current_plot_as_jpeg)
-        png_save_button.pack(side='right', padx=10, pady=10)
-        pdf_save_button = ttk.Button(right_frame, text="Save as PDF", command=self.save_current_plot_as_pdf)
-        pdf_save_button.pack(side='left', padx=10, pady=10)
+        self.left_frame.pack(side='left', fill='both', expand=True)
+        self.right_frame.pack(side='right', fill='both', expand=True)
+        self.png_save_button = ttk.Button(self.left_frame, text="Save as JPEG", command=self.save_current_plot_as_jpeg)
+        self.png_save_button.pack(side='right', padx=10, pady=10)
+        self.pdf_save_button = ttk.Button(self.right_frame, text="Save as PDF", command=self.save_current_plot_as_pdf)
+        self.pdf_save_button.pack(side='left', padx=10, pady=10)
         #https://stackoverflow.com/questions/66510020/select-date-range-with-tkinter
 
-        time_spinvar = tk.IntVar()
+        self.sec_var = tk.IntVar()
+        self.min_var = tk.IntVar()
+        self.hr_var = tk.IntVar()
         #sau entry
-        time_spinbox = ttk.Spinbox(right_frame, from_=0, to=100, textvariable=time_spinvar, width=3)
-        time_spinbox.pack(side='left', padx=10, pady=10)
-        # time_label = ttk.Label(right_frame, textvariable=time_spinvar)
+        self.hr_spinbox = ttk.Spinbox(self.right_frame, from_=0, to=100, textvariable=self.hr_var, width=3)
+        self.hr_spinbox.pack(side='left', padx=10, pady=10)
+        self.min_spinbox = ttk.Spinbox(self.right_frame, from_=0, to=59, textvariable=self.min_var, width=3)
+        self.min_spinbox.pack(side='left', padx=10, pady=10)
+        self.sec_spinbox = ttk.Spinbox(self.right_frame, from_=0, to=59, textvariable=self.sec_var, width=3)
+        self.sec_spinbox.pack(side='left', padx=10, pady=10)
 
+        # time_label = ttk.Label(right_frame, textvariable=time_spinvar)
         # time_label.pack(side='left', padx=10, pady=10)
 
-        def do_something(event):
-            #entry -> entry.get()
-            offset = time_spinvar.get()
-            print("do something:", offset)
-            read_data("log_file.txt", offset)
 
-        time_spinbox.bind("<Return>", do_something)
+        self.sec_spinbox.bind("<Return>", self.send_offset)
+        self.min_spinbox.bind("<Return>", self.send_offset)
+        self.hr_spinbox.bind("<Return>", self.send_offset)
+
+    def send_offset(self,  event):
+        #entry -> entry.get()
+        offset = datetime.timedelta(seconds=self.sec_var.get(), minutes=self.min_var.get(), hours=self.hr_var.get())
+        print("do something:", offset)
+        read_data("log_file.txt", offset)
+
+
     def save_current_plot_as_pdf(self):
         global pdf_cnt
         self.graph.fig.savefig(f'{self.graph.title}_{pdf_cnt}.pdf', format = 'pdf')

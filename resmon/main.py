@@ -23,7 +23,8 @@ import winstats
 
 # TODO: flush problem
 # TODO: logging time
-# TODO: add constants tab
+# TODO: add constants tab??
+# TODO: fix times on history plot -> change x_ticks
 
 # plt.style.use('seaborn-v0_8-whitegrid')
 plt.style.use('dark_background')
@@ -80,6 +81,7 @@ def update_data():
 
     get_io_usage()
 
+    data["disk_usage"].append(psutil.disk_usage("/").percent)
 
 def write_json_data(filename, write_data):
     try:
@@ -121,7 +123,7 @@ def read_data(filename, time_offset, y_data):
                     entry_date = datetime.datetime.strptime(entry["time"], "%Y-%m-%d %H:%M:%S")
                     if entry_date + time_offset > datetime.datetime.now() - datetime.timedelta(seconds=1):
                         print(json.dumps(entry, indent=4))
-                        temp_data["time"].append(entry["time"])
+                        temp_data["time"].append(entry_date)
                         for key in y_data:
                             temp_data[key].append(entry[key])
                         # print(json.dumps(temp_data, indent=4))
@@ -132,7 +134,7 @@ def read_data(filename, time_offset, y_data):
 
     return temp_data
 
-def plot_history(offset, graph):
+def plot_history(offset, graph, resize_y_axis = True):
     temp_data = read_data("log_file.txt", offset, graph.legend)
     x_data = temp_data["time"]
     y_data = []
@@ -142,13 +144,15 @@ def plot_history(offset, graph):
     new_y_lim = 0
     for y in y_data:
         new_y_lim = max(new_y_lim, max(y))
+    if resize_y_axis and graph.y_data_lim != 100:
+        visualize_log(graph.plot_color, new_y_lim, graph.y_data_label, x_data, y_data, graph.legend, graph.line_styles)
+    else:
+        visualize_log(graph.plot_color, graph.y_data_lim, graph.y_data_label, x_data, y_data, graph.legend, graph.line_styles)
 
-    visualize_log(graph.plot_color, new_y_lim, graph.y_data_label, x_data, y_data, graph.legend, graph.line_styles)
-# ??root not passed as arg
 def visualize_log(plot_color, y_data_lim, y_data_label, x_data, y_data, legend, line_styles):
     window = tk.Toplevel(master=root)
-    window.title("visualize my ass")
-    window.geometry("600x300")
+    window.title(f"Log History of {legend[0]} plot")
+    window.geometry("900x600")
 
     history = GraphFrame(window, plot_color, y_data_lim, y_data_label, x_data, y_data, legend, line_styles)
     history.pack()
@@ -167,9 +171,9 @@ class GraphFrame(tk.Frame):
         # plot list for every y_data sets
         self.plots = []
 
-        tk.Frame.__init__(self, parent_frame, bg='blue')
-        label = tk.Label(self, text=f'{self.legend[0]} plot', font=LARGE_FONT, background='blue')
-        label.pack(pady=10, padx=10, side='top')
+        tk.Frame.__init__(self, parent_frame, bg='#676767')
+        self.title_label = tk.Label(self, text=f'{self.y_data_label.replace("_", " ")}', font='Helvetica 18 bold', background='#676767')
+        self.title_label.pack(pady=10, padx=10, side='top')
 
         self.fig = plt.figure()
         self.fig.set_size_inches(10, 6, forward=True)
@@ -206,7 +210,7 @@ class GraphFrame(tk.Frame):
             max_y_val = self.y_data_lim
             for y in self.y_data:
                 max_y_val = max(max_y_val, max(y))
-            self.ax.set_ylim(0, max_y_val)
+            self.ax.set_ylim(0, max_y_val + 0.2*max_y_val)
             # self.y_data_lim = max_y_val
 
         self.fig.canvas.draw()
@@ -267,16 +271,16 @@ class ButtonFrame():
     def __init__(self, parent_frame, graph):
         self.base_frame = tk.Frame(parent_frame, height=50)
         self.base_frame.pack(side='top', fill='x')
-        self.left_frame = tk.Frame(self.base_frame, bg='red')
-        self.right_frame = tk.Frame(self.base_frame, bg='red')
+        self.left_frame = tk.Frame(self.base_frame, bg='#676767')
+        self.right_frame = tk.Frame(self.base_frame, bg='#676767')
 
         self.graph = graph
 
         self.left_frame.pack(side='left', fill='both', expand=True)
         self.right_frame.pack(side='right', fill='both', expand=True)
-        self.png_save_button = ttk.Button(self.left_frame, text="Save as JPEG", command=self.save_current_plot_as_jpeg)
+        self.png_save_button = tk.Button(self.left_frame, text="Save as JPEG", bg='#3f3f3f', fg='white',command=self.save_current_plot_as_jpeg)
         self.png_save_button.pack(side='right', padx=10, pady=10)
-        self.pdf_save_button = ttk.Button(self.right_frame, text="Save as PDF", command=self.save_current_plot_as_pdf)
+        self.pdf_save_button = tk.Button(self.right_frame, text="Save as PDF", bg='#3f3f3f', fg='white', command=self.save_current_plot_as_pdf)
         self.pdf_save_button.pack(side='left', padx=10, pady=10)
         # https://stackoverflow.com/questions/66510020/select-date-range-with-tkinter
 
@@ -284,12 +288,20 @@ class ButtonFrame():
         self.min_var = tk.IntVar()
         self.hr_var = tk.IntVar()
         # sau entry
-        self.hr_spinbox = ttk.Spinbox(self.right_frame, from_=0, to=100, textvariable=self.hr_var, width=3)
+        self.hr_spinbox = tk.Spinbox(self.right_frame, from_=0, to=100, textvariable=self.hr_var, width=3)
         self.hr_spinbox.pack(side='left', padx=10, pady=10)
-        self.min_spinbox = ttk.Spinbox(self.right_frame, from_=0, to=59, textvariable=self.min_var, width=3)
+        self.hr_label = tk.Label(self.right_frame, text="Hr", bg='#676767', fg='white')
+        self.hr_label.pack(side='left', padx=0, pady=10)
+
+        self.min_spinbox = tk.Spinbox(self.right_frame, from_=0, to=59, textvariable=self.min_var, width=3)
         self.min_spinbox.pack(side='left', padx=10, pady=10)
-        self.sec_spinbox = ttk.Spinbox(self.right_frame, from_=0, to=59, textvariable=self.sec_var, width=3)
+        self.min_label = tk.Label(self.right_frame, text="Min", bg='#676767', fg='white')
+        self.min_label.pack(side='left', padx=0, pady=10)
+
+        self.sec_spinbox = tk.Spinbox(self.right_frame, from_=0, to=59, textvariable=self.sec_var, width=3)
         self.sec_spinbox.pack(side='left', padx=10, pady=10)
+        self.sec_label = tk.Label(self.right_frame, text="Sec", bg='#676767', fg='white')
+        self.sec_label.pack(side='left', padx=0, pady=10)
 
         # time_label = ttk.Label(right_frame, textvariable=time_spinvar)
         # time_label.pack(side='left', padx=10, pady=10)
@@ -301,14 +313,15 @@ class ButtonFrame():
     def send_offset(self, event):
         # entry -> entry.get()
         offset = datetime.timedelta(seconds=self.sec_var.get(), minutes=self.min_var.get(), hours=self.hr_var.get())
-        # print("do something:", offset)
-        # read_data("log_file.txt", offset, self.graph.legend)
+        self.sec_var.set(0)
+        self.min_var.set(0)
+        self.hr_var.set(0)
         plot_history(offset, self.graph)
 
     def save_current_plot_as_pdf(self):
         global pdf_cnt
         new_file_name = self.graph.y_data_label.replace("/s", "").replace("(%)", "")
-        self.graph.fig.savefig(f'{new_file_name}_{pdf_cnt}.pdf', format='pdf')
+        self.graph.fig.savefig(f'{new_file_name}{pdf_cnt}.pdf', format='pdf')
         print(f"saved figure {pdf_cnt} as pdf")
         plt.close(self.graph.fig)
         pdf_cnt += 1
@@ -316,7 +329,7 @@ class ButtonFrame():
     def save_current_plot_as_jpeg(self):
         global jpeg_cnt
         new_file_name = self.graph.y_data_label.replace("/s", "").replace("(%)", "")
-        self.graph.fig.savefig(f'{new_file_name}_{jpeg_cnt}.jpeg', format='jpeg')
+        self.graph.fig.savefig(f'{new_file_name}{jpeg_cnt}.jpeg', format='jpeg')
         print(f"saved figure {jpeg_cnt} as jpeg")
         plt.close(self.graph.fig)
         jpeg_cnt += 1
@@ -360,7 +373,12 @@ io_data_graph = GraphFrame(scrollable_frame.scrollable_frame, "red", 5000, "I/O 
 io_data_graph.pack(side="top", fill="both", expand=True)
 io_data_button = ButtonFrame(scrollable_frame.scrollable_frame, io_data_graph)
 
-manager = GraphManager([cpu_graph, mem_graph, network_data_graph, io_data_graph], "log_file.txt")
+disk_usage_graph = GraphFrame(scrollable_frame.scrollable_frame, "purple", 100, "DISK USAGE (%)",
+                           data["time"],[data["disk_usage"]], ["disk_usage"], ["solid"])
+disk_usage_graph.pack(side="top", fill="both", expand=True)
+disk_usage_button = ButtonFrame(scrollable_frame.scrollable_frame, disk_usage_graph)
+
+manager = GraphManager([cpu_graph, mem_graph, network_data_graph, io_data_graph, disk_usage_graph], "log_file.txt")
 
 root.mainloop()
 # read_data("log_file.txt", 6, datetime.datetime.now())

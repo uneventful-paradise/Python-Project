@@ -22,16 +22,18 @@ import winstats
 # https://www.geeksforgeeks.org/how-to-embed-matplotlib-charts-in-tkinter-gui/
 
 # TODO: flush problem
-# TODO: network graph
-# TODO: add disk usage and sent/received network data
+# TODO: logging time
+# TODO: add constants tab
 
 # plt.style.use('seaborn-v0_8-whitegrid')
 plt.style.use('dark_background')
 LARGE_FONT = ("Verdana", 12)
 data = {}
-for name in ("cpu_usage", "cpu_freq", "mem_usage", "disk_usage", "network_data", "network_in", "network_out",
-             "cpu_usage_time", "cpu_freq_time", "mem_usage_time", "disk_usage_time", "network_data_time"):
+for name in (
+"time", "cpu_usage", "cpu_freq", "mem_usage", "disk_usage", "network_data", "network_in", "network_out", "IO_out",
+"IO_in"):
     data[name] = collections.deque(maxlen=5)
+
 data["old_network_value"] = 0
 data["old_tx"] = 0
 data["old_rx"] = 0
@@ -47,28 +49,36 @@ def get_network_usage():
     return net_usage, new_value, tx, rx
 
 
-def update_data(data_type="all"):
-    # if (len(data["time"]) > 0 and datetime.datetime.now() > data["time"][-1] + datetime.timedelta(0, 1)) or data_type == "all":
-    #     data["time"].append(datetime.datetime.now())
-    if data_type == "cpu_usage" or data_type == "all":
-        data["cpu_usage"].append(psutil.cpu_percent())
-        data["cpu_usage_time"].append(datetime.datetime.now())
-    if data_type == "cpu_freq" or data_type == "all":
-        data["cpu_freq"].append(psutil.cpu_freq().current)
-        data["cpu_freq_time"].append(datetime.datetime.now())
-    if data_type == "mem_usage" or data_type == "all":
-        data["mem_usage"].append(psutil.virtual_memory().percent)
-        data["mem_usage_time"].append(datetime.datetime.now())
-    if data_type == "network_data" or data_type == "all":
-        (current_net_usage, new_network_usage, tx, rx) = get_network_usage()
-        data["network_data"].append(current_net_usage)
-        data["network_in"].append((rx - data["old_rx"]) / 1024 * 8)
-        data["network_out"].append((tx - data["old_tx"]) / 1024 * 8)
-        data["network_data_time"].append(datetime.datetime.now())
-        data["old_network_value"] = new_network_usage
-        data["old_tx"] = tx
-        data["old_rx"] = rx
-    # adding a time array for each graph to avoid sync issues
+def get_io_usage():
+    bytes_sent = round(psutil.disk_io_counters().read_bytes / 1024 ** 2, 2)
+    bytes_recv = round(psutil.disk_io_counters().write_bytes / 1024 ** 2, 2)
+    if len(data["IO_in"]) == 0:
+        data["IO_in"].append(bytes_recv)
+        data["IO_out"].append(bytes_sent)
+    else:
+        data["IO_in"].append(bytes_recv - data["IO_in"][-1])
+        data["IO_out"].append(bytes_sent - data["IO_out"][-1])
+
+
+def update_data():
+    data["time"].append(datetime.datetime.now())
+
+    data["cpu_usage"].append(psutil.cpu_percent())
+
+    data["cpu_freq"].append(psutil.cpu_freq().current)
+
+    data["mem_usage"].append(psutil.virtual_memory().percent)
+
+    (current_net_usage, new_network_usage, tx, rx) = get_network_usage()
+    data["network_data"].append(current_net_usage)
+    data["network_in"].append((rx - data["old_rx"]) / 1024 * 8)
+    data["network_out"].append((tx - data["old_tx"]) / 1024 * 8)
+
+    data["old_network_value"] = new_network_usage
+    data["old_tx"] = tx
+    data["old_rx"] = rx
+
+    get_io_usage()
 
 
 def write_json_data(filename, write_data):
@@ -85,7 +95,7 @@ def log_data(filename):
     current_data = dict()
     for key in data:
         try:
-            if key.endswith("_time"):
+            if key == "time":
                 current_data[key] = data[key][-1].strftime("%Y-%m-%d %H:%M:%S")
             elif key in ("old_network_value", "old_tx", "old_rx"):
                 current_data[key] = data[key]
@@ -96,7 +106,11 @@ def log_data(filename):
     write_json_data(filename, current_data)
 
 
-def read_data(filename, time_offset):
+def read_data(filename, time_offset, y_data):
+    temp_data = {}
+    for key in y_data:
+        temp_data[key] = []
+    temp_data["time"] = []
     try:
         with open(filename, "r") as f:
             # offset = datetime.timedelta(seconds=time_offset)
@@ -104,31 +118,57 @@ def read_data(filename, time_offset):
             for line in content:
                 try:
                     entry = json.loads(line)
-                    entry_date = datetime.datetime.strptime(entry["cpu_usage_time"], "%Y-%m-%d %H:%M:%S")
-                    if entry_date + time_offset >= datetime.datetime.now():
-                        print(json.dumps(entry, indent=4))  # Pretty print filtered entry
-
+                    entry_date = datetime.datetime.strptime(entry["time"], "%Y-%m-%d %H:%M:%S")
+                    if entry_date + time_offset > datetime.datetime.now() - datetime.timedelta(seconds=1):
+                        print(json.dumps(entry, indent=4))
+                        temp_data["time"].append(entry["time"])
+                        for key in y_data:
+                            temp_data[key].append(entry[key])
+                        # print(json.dumps(temp_data, indent=4))
                 except (json.JSONDecodeError, KeyError):
                     print("Skipping invalid or incomplete entry.")
     except FileNotFoundError:
         print("Log file not found.")
 
+    return temp_data
+
+def plot_history(offset, graph):
+    temp_data = read_data("log_file.txt", offset, graph.legend)
+    x_data = temp_data["time"]
+    y_data = []
+    for key in temp_data:
+        if key != "time":
+            y_data.append(temp_data[key])
+    new_y_lim = 0
+    for y in y_data:
+        new_y_lim = max(new_y_lim, max(y))
+
+    visualize_log(graph.plot_color, new_y_lim, graph.y_data_label, x_data, y_data, graph.legend, graph.line_styles)
+# ??root not passed as arg
+def visualize_log(plot_color, y_data_lim, y_data_label, x_data, y_data, legend, line_styles):
+    window = tk.Toplevel(master=root)
+    window.title("visualize my ass")
+    window.geometry("600x300")
+
+    history = GraphFrame(window, plot_color, y_data_lim, y_data_label, x_data, y_data, legend, line_styles)
+    history.pack()
 
 class GraphFrame(tk.Frame):
-    def __init__(self, parent_frame, plot_color, y_data_lim, y_data_label, y_data, line_styles):
+    def __init__(self, parent_frame, plot_color, y_data_lim, y_data_label, x_data, y_data, legend, line_styles):
         self.plot_color = plot_color
 
         self.y_data_lim = y_data_lim
         self.y_data_label = y_data_label
         self.y_data = y_data
+        self.x_data = x_data
+
         self.line_styles = line_styles
+        self.legend = legend
         # plot list for every y_data sets
         self.plots = []
-        # TODO: change to global time variable
-        self.time_index = "cpu_usage_time"
 
         tk.Frame.__init__(self, parent_frame, bg='blue')
-        label = tk.Label(self, text=f'{self.y_data} plot', font=LARGE_FONT)
+        label = tk.Label(self, text=f'{self.legend[0]} plot', font=LARGE_FONT, background='blue')
         label.pack(pady=10, padx=10, side='top')
 
         self.fig = plt.figure()
@@ -140,12 +180,12 @@ class GraphFrame(tk.Frame):
         # plot every y_data set and add it to the plot list
         for t in zip(self.y_data, self.line_styles):
             self.plots.append(
-                self.ax.plot(data[self.time_index], data[t[0]], color=self.plot_color, linestyle=t[1], linewidth=3)[0])
+                self.ax.plot(self.x_data, t[0], color=self.plot_color, linestyle=t[1], linewidth=3)[0])
         self.ax.set_ylim(0, y_data_lim)
 
         self.ax.set_xlabel('Time')
         self.ax.set_ylabel(self.y_data_label)
-        self.ax.legend(self.plots, self.y_data, loc='upper left')
+        self.ax.legend(self.plots, self.legend, loc='upper left')
 
         self.canvas = FigureCanvasTkAgg(self.fig, self)
         # creating matplotlib toolbar
@@ -158,15 +198,16 @@ class GraphFrame(tk.Frame):
     def animate(self):
         # update_data(self.data_type)
         for t in zip(self.plots, self.y_data):
-            t[0].set_xdata(data[self.time_index])
-            t[0].set_ydata(data[t[1]])
+            t[0].set_xdata(self.x_data)
+            t[0].set_ydata(t[1])
 
-        self.ax.set_xlim(data[self.time_index][0], data[self.time_index][-1])
+        self.ax.set_xlim(self.x_data[0], self.x_data[-1])
         if self.y_data_lim != 100:
-            max_y_val = 0
+            max_y_val = self.y_data_lim
             for y in self.y_data:
-                max_y_val = max(max_y_val, max(data[y]))
-            self.ax.set_ylim(0, max_y_val + 1000)
+                max_y_val = max(max_y_val, max(y))
+            self.ax.set_ylim(0, max_y_val)
+            # self.y_data_lim = max_y_val
 
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
@@ -184,7 +225,7 @@ class GraphManager:
         self.update_all_data()
 
     def update_all_data(self):
-        update_data("all")  # Update all data at once
+        update_data()  # Update all data at once
         for graph in self.graphs:
             graph.animate()
         log_data(self.log_file)
@@ -194,6 +235,7 @@ class GraphManager:
 class ScrollableFrame(tk.Frame):
     def __init__(self, parent):
         tk.Frame.__init__(self, parent)
+        # self.graphs = graphs
         # self.graphs = graphs
 
         # Canvas for scrolling
@@ -259,19 +301,22 @@ class ButtonFrame():
     def send_offset(self, event):
         # entry -> entry.get()
         offset = datetime.timedelta(seconds=self.sec_var.get(), minutes=self.min_var.get(), hours=self.hr_var.get())
-        print("do something:", offset)
-        read_data("log_file.txt", offset)
+        # print("do something:", offset)
+        # read_data("log_file.txt", offset, self.graph.legend)
+        plot_history(offset, self.graph)
 
     def save_current_plot_as_pdf(self):
         global pdf_cnt
-        self.graph.fig.savefig(f'{self.graph.label}_{pdf_cnt}.pdf', format='pdf')
+        new_file_name = self.graph.y_data_label.replace("/s", "").replace("(%)", "")
+        self.graph.fig.savefig(f'{new_file_name}_{pdf_cnt}.pdf', format='pdf')
         print(f"saved figure {pdf_cnt} as pdf")
         plt.close(self.graph.fig)
         pdf_cnt += 1
 
     def save_current_plot_as_jpeg(self):
         global jpeg_cnt
-        self.graph.fig.savefig(f'{self.graph.label}_{jpeg_cnt}.jpeg', format='jpeg')
+        new_file_name = self.graph.y_data_label.replace("/s", "").replace("(%)", "")
+        self.graph.fig.savefig(f'{new_file_name}_{jpeg_cnt}.jpeg', format='jpeg')
         print(f"saved figure {jpeg_cnt} as jpeg")
         plt.close(self.graph.fig)
         jpeg_cnt += 1
@@ -288,28 +333,34 @@ scrollable_frame.pack(side="top", fill="both", expand=True)
 update_data()
 update_data()
 
-cpu_graph = GraphFrame(scrollable_frame.scrollable_frame, "blue",  100, "CPU USAGE (%)",
-                       ["cpu_usage"], ["solid"])
+cpu_graph = GraphFrame(scrollable_frame.scrollable_frame, "blue", 100, "CPU USAGE (%)",
+                       data["time"], [data["cpu_usage"]], ["cpu_usage"], ["solid"])
 cpu_graph.pack(side="top", fill="both", expand=True)
 cpu_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, cpu_graph)
 
-mem_graph = GraphFrame(scrollable_frame.scrollable_frame, "orange", 100,
-                       "MEMORY USAGE (%)", ["mem_usage"], ["solid"])
+mem_graph = GraphFrame(scrollable_frame.scrollable_frame, "orange", 100, "MEMORY USAGE (%)",
+                       data["time"], [data["mem_usage"]], ["mem_usage"], ["solid"])
 mem_graph.pack(side="top", fill="both", expand=True)
 mem_button_frame = ButtonFrame(scrollable_frame.scrollable_frame, mem_graph)
 
-cpu_freq_graph = GraphFrame(scrollable_frame.scrollable_frame, "green",  5000,
-                            "CPU FREQUENCY (Mhz)", ["cpu_freq"], ["solid"])
-cpu_freq_graph.pack(side="top", fill="both", expand=True)
-cpu_freq_button = ButtonFrame(scrollable_frame.scrollable_frame, cpu_freq_graph)
+# cpu_freq_graph = GraphFrame(scrollable_frame.scrollable_frame, "green",  5000,
+#                             "CPU FREQUENCY (Mhz)", ["cpu_freq"], ["solid"])
+# cpu_freq_graph.pack(side="top", fill="both", expand=True)
+# cpu_freq_button = ButtonFrame(scrollable_frame.scrollable_frame, cpu_freq_graph)
 
 network_data_graph = GraphFrame(scrollable_frame.scrollable_frame,
                                 "pink", 1000, "NETWORK DATA (Mbs/s)",
-["network_data", "network_in", "network_out"], ["solid", "dotted", "dashed"])
+                                data["time"], [data["network_data"], data["network_in"], data["network_out"]],
+                                ["network_data", "network_in", "network_out"], ["solid", "dotted", "dashed"])
 network_data_graph.pack(side="top", fill="both", expand=True)
 network_data_button = ButtonFrame(scrollable_frame.scrollable_frame, network_data_graph)
 
-manager = GraphManager([cpu_graph, mem_graph, cpu_freq_graph, network_data_graph], "log_file.txt")
+io_data_graph = GraphFrame(scrollable_frame.scrollable_frame, "red", 5000, "I/O DATA (Mbs)",
+                           data["time"],[data["IO_out"], data["IO_in"]], ["IO_out", "IO_in"], ["solid", "dotted"])
+io_data_graph.pack(side="top", fill="both", expand=True)
+io_data_button = ButtonFrame(scrollable_frame.scrollable_frame, io_data_graph)
+
+manager = GraphManager([cpu_graph, mem_graph, network_data_graph, io_data_graph], "log_file.txt")
 
 root.mainloop()
 # read_data("log_file.txt", 6, datetime.datetime.now())

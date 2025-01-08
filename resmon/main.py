@@ -7,10 +7,7 @@ import datetime
 import tkinter as tk
 import json
 
-# TODO: flush problem
-# TODO: logging time
-# TODO: add constants tab??
-# TODO: fix times on history plot -> change x_ticks
+
 
 # plt.style.use('seaborn-v0_8-whitegrid')
 plt.style.use("dark_background")
@@ -396,7 +393,8 @@ class ScrollableFrame(tk.Frame):
            parent (tk.TK): Parent tkinter widget.
         """
         tk.Frame.__init__(self, parent)
-
+        #https://stackoverflow.com/questions/73095063/adding-a-scrollbar-to-a-canvas-with-figures-tkinter
+        #https://stackoverflow.com/questions/69934460/how-i-can-add-scrollbar-in-frame-tkinter-python
         self.canvas = tk.Canvas(self, bg="light green")
         self.scrollbar = tk.Scrollbar(
             self, orient="vertical", command=self.canvas.yview
@@ -408,7 +406,6 @@ class ScrollableFrame(tk.Frame):
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")),
         )
 
-        # Create window inside canvas
         window_id = self.canvas.create_window(
             (0, 0), window=self.scrollable_frame, anchor="nw"
         )
@@ -538,7 +535,7 @@ class ButtonFrame:
         The filename is dynamically generated based on the graph's label.
         """
         global PDF_CNT
-        new_file_name = self.graph.y_data_label.replace("/s", "").replace("(%)", "")
+        new_file_name = self.graph.y_data_label.replace("/s", "").replace("(%)", "").replace("/", "_")
         self.graph.fig.savefig(f"{new_file_name}{PDF_CNT}.pdf", format="pdf")
         print(f"saved figure {PDF_CNT} as pdf")
         plt.close(self.graph.fig)
@@ -550,7 +547,7 @@ class ButtonFrame:
         The filename is dynamically generated based on the graph's label.
         """
         global JPEG_CNT
-        new_file_name = self.graph.y_data_label.replace("/s", "").replace("(%)", "")
+        new_file_name = self.graph.y_data_label.replace("/s", "").replace("(%)", "").replace("/", "_")
         self.graph.fig.savefig(f"{new_file_name}{JPEG_CNT}.jpeg", format="jpeg")
         print(f"saved figure {JPEG_CNT} as jpeg")
         plt.close(self.graph.fig)
@@ -603,7 +600,7 @@ network_data_graph = GraphFrame(
     scrollable_frame.scrollable_frame,
     "pink",
     1000,
-    "NETWORK DATA (Mbs/s)",
+    "NETWORK DATA (Kbs/s)",
     data["time"],
     [data["network_data"], data["network_in"], data["network_out"]],
     ["network_data", "network_in", "network_out"],
